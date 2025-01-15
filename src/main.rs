@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use std::io::ErrorKind;
 
 mod init;
+mod status;
 
 /// Simple Version Control System
 #[derive(Parser, Debug)]
@@ -14,6 +15,7 @@ struct Args {
 #[derive(Clone, Debug, Subcommand)]
 enum Command {
     Init,
+    Status,
     Add {
         /// Paths to add to staging
         path: Vec<String>,
@@ -46,5 +48,6 @@ fn main() {
             }
         }
         Command::Checkout { .. } => todo!(),
+        Command::Status => status::status().unwrap_or_else(|err| println!("{}", err)),
     }
 }
