@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::io::ErrorKind;
 
+mod commit;
 mod init;
 mod status;
 
@@ -41,7 +42,10 @@ fn main() {
                 _ => eprint!("Failed to initialize VCS"),
             },
         },
-        Command::Commit { message } => print!("Commit with message {}", message),
+        Command::Commit { message } => {
+            print!("Commit with message {}", message);
+            let _ = commit::commit();
+        }
         Command::Add { path } => {
             for p in path {
                 println!("{}", p);
