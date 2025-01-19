@@ -27,6 +27,25 @@ pub fn status() -> Result<(), Error> {
         Some(matched_value) => {
             //old instance
             let matched_commit = matched_value?;
+            let commit_id = matched_commit.file_name();
+            let mut path = PathBuf::from("./.rust-vcs/commits");
+            path.push(commit_id);
+
+            let mut old_tree_path = path.clone();
+            old_tree_path.push("meta");
+            old_tree_path.push("tree.json");
+
+            let old_tree: VCSTree = serde_json::from_str(&fs::read_to_string(old_tree_path)?)?;
+
+            let diff = tree.diff_tree(old_tree);
+
+            match diff {
+                None => println!("No changes to commit"),
+                Some(t) => {
+                    println!("Changes:");
+                    print!("{}", t.to_string().yellow());
+                }
+            }
         }
     };
     // .unwrap_or(Err(Error::new(ErrorKind::Other, "unable to find commit")))?;
@@ -35,7 +54,7 @@ pub fn status() -> Result<(), Error> {
 }
 
 pub fn get_tree_structure(root: PathBuf) -> Result<VCSTree, Error> {
-    let ignore = [".rust-vcs", "target", "Cargo.lock", ".git"];
+    let ignore: [&str; 4] = [".rust-vcs", "target", "Cargo.lock", ".git"];
     let dir_contents = fs::read_dir(&root)?
         .filter(|res| {
             res.as_ref()
@@ -58,7 +77,7 @@ pub fn get_tree_structure(root: PathBuf) -> Result<VCSTree, Error> {
         })
         .collect::<Result<Vec<VCSTree>, Error>>()?;
 
-    Ok(VCSTree::Directory(VCSDirectory {
+    Ok(VCSTree::Root(VCSDirectory {
         name: root
             .file_name()
             .unwrap_or(&OsString::from("."))
@@ -91,6 +110,7 @@ pub struct VCSDirectory {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum VCSTree {
+    Root(VCSDirectory),
     File(VCSFile),
     Directory(VCSDirectory),
 }
@@ -107,7 +127,7 @@ impl VCSTree {
         let root = path.unwrap_or("".to_string());
         match self {
             Self::File(f) => Vec::from([format!("{}{}", root, f.name)]),
-            Self::Directory(d) => d
+            Self::Directory(d) | Self::Root(d) => d
                 .children
                 .iter()
                 .map(|f| f.paths_with_prefix(Some(format!("{root}{}/", d.name))))
@@ -120,34 +140,44 @@ impl VCSTree {
     }
 
     fn form_tree(&self, mut path: PathBuf, contents: Vec<VCSTree>) -> Self {
-        let new_tree = VCSTree::Directory(VCSDirectory {
-            name: path
-                .file_name()
-                .unwrap_or(&OsString::from("None"))
-                .to_str()
-                .unwrap()
-                .to_string(),
+        VCSTree::Root(VCSDirectory {
+            name: path.into_os_string().to_str().unwrap().to_string(),
             children: contents,
-        });
-
-        if path.pop() && path.file_name().is_some() {
-            self.form_tree(path, Vec::from([new_tree]))
-        } else {
-            new_tree
-        }
+        })
     }
 
-    fn copy_contents(&self, mut from: PathBuf, mut to: PathBuf) -> Result<(), Error>{
+    fn copy_contents(&self, mut from: PathBuf, mut to: PathBuf) -> Result<(), Error> {
         match self {
             Self::File(f) => {
-                fs::copy(format!("{}/{}", from.into_os_string().into_string().expect("Unable to unpack from"), f.name), format!("{}/{}",to.into_os_string().into_string().expect("Unable to unpack to"), f.name))?;
+                fs::copy(
+                    format!(
+                        "{}/{}",
+                        from.into_os_string()
+                            .into_string()
+                            .expect("Unable to unpack from"),
+                        f.name
+                    ),
+                    format!(
+                        "{}/{}",
+                        to.into_os_string()
+                            .into_string()
+                            .expect("Unable to unpack to"),
+                        f.name
+                    ),
+                )?;
                 Ok(())
             }
-            Self::Directory(d) => {
+            Self::Directory(d) | Self::Root(d) => {
                 from.push(d.name.clone());
                 to.push(d.name.clone());
                 fs::create_dir_all(to.clone())?;
-                println!("{}", to.clone().into_os_string().into_string().expect("Unable to unpack to"));
+                println!(
+                    "{}",
+                    to.clone()
+                        .into_os_string()
+                        .into_string()
+                        .expect("Unable to unpack to")
+                );
                 for child in d.children.clone() {
                     child.copy_contents(from.clone(), to.clone())?;
                 }
@@ -156,22 +186,90 @@ impl VCSTree {
         }
     }
 
-    pub fn copy_to(&self, new_root: String) -> Self {
-        let root_directory: VCSDirectory = match self {
-            Self::File(f) => {
-                panic!("Unable to parse root directory")
-            }
-            Self::Directory(d) => d.clone(),
-        };
+    pub fn copy_to(&self, new_path: PathBuf) -> Result<Self, Error> {
+        let root_directory: VCSDirectory = self.get_root_dir();
 
-        let new_path: PathBuf = PathBuf::from(new_root);
-
-        for content in &root_directory.children {
-            content.copy_contents(PathBuf::from(&root_directory.name), new_path.clone());
-        }
+        self.copy_contents(PathBuf::from(&root_directory.name), new_path.clone())?;
 
         let new_tree = self.form_tree(new_path, root_directory.children);
 
-        new_tree
+        Ok(new_tree)
+    }
+
+    // fn get_to_contents(&self, path: PathBuf) -> Result<Vec<Self>, Error> {
+
+    //     let root_directory: VCSDirectory = match self {
+    //         Self::File(f) => {
+    //             panic!("Unable to parse root directory")
+    //         }
+    //         Self::Directory(d) => d.clone(),
+    //     };
+
+    //     let mut tree = self.clone();
+
+    //     for p in path.iter() {
+    //         match tree {
+    //             Self::File(f) => {
+    //                 panic!("Unable to parse directory")
+    //             }
+    //             Self::Directory(d) => {
+    //                 tree = d.children.into_iter().filter(|child| match child.name == p).last().expect("Unable to parse directory")
+    //             },
+    //         }
+    //     }
+
+    //     let root_directory: VCSDirectory = match self {
+    //         Self::File(f) => {
+    //             panic!("Unable to parse directory")
+    //         }
+    //         Self::Directory(d) => d.clone(),
+    //     };
+
+    // }
+
+    fn get_root_dir(&self) -> VCSDirectory {
+        match self {
+            Self::File(_) | Self::Directory(_) => {
+                panic!("Unable to parse root directory")
+            }
+            Self::Root(d) => d.clone(),
+        }
+    }
+
+    fn diff_tree(&self, old_tree: Self) -> Option<Self> {
+        match (self, old_tree) {
+            (Self::File(a), Self::File(b)) => {
+                if a.sha == b.sha {
+                    None
+                } else {
+                    Some(self.clone())
+                }
+            }
+            (Self::Directory(a), Self::Directory(b)) | (Self::Root(a), Self::Root(b)) => {
+                let vec = a
+                    .children
+                    .iter()
+                    .zip(b.children.iter())
+                    .map(|(c, o)| c.clone().diff_tree(o.clone()))
+                    .filter(|x| x.is_some())
+                    .map(|x| x.unwrap())
+                    .collect::<Vec<VCSTree>>();
+
+                if vec.len() > 0 {
+                    let diff_dir = VCSDirectory {
+                        children: vec,
+                        ..a.clone()
+                    };
+                    match self {
+                        Self::Directory(_) => Some(Self::Directory(diff_dir)),
+                        Self::Root(_) => Some(Self::Root(diff_dir)),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            (_, _) => panic!("Unmatched diff terms"),
+        }
     }
 }

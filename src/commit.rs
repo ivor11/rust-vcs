@@ -1,6 +1,7 @@
 use crate::status::{self, VCSTree};
 use std::fs;
 use std::io::{Error, ErrorKind};
+use std::path::PathBuf;
 use std::time::SystemTime;
 
 pub fn commit() -> Result<(), Error> {
@@ -14,7 +15,9 @@ pub fn commit() -> Result<(), Error> {
     fs::create_dir_all(format!("{}/meta", commit_root))
         .and_then(|_| fs::create_dir_all(format!("{}/data", commit_root)))?;
 
-    let json_data = serde_json::to_string(&tree.copy_to(format!("{}/data", commit_root))).unwrap();
+    let json_data =
+        serde_json::to_string(&tree.copy_to(PathBuf::from(format!("{}/data", commit_root)))?)
+            .unwrap();
     fs::write(format!("{}/meta/tree.json", commit_root), json_data)?;
 
     fs::write(".rust-vcs/current", commit_id.to_string())?;
