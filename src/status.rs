@@ -1,9 +1,11 @@
 use clap::error::Result;
-use colored::Colorize;
+use colored::{ColoredString, Colorize};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs::{self, File};
+use std::hash::{Hash, Hasher};
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
@@ -22,7 +24,7 @@ pub fn status() -> Result<(), Error> {
         None => {
             //new instance
             println!("New VCS Repository: Untracked files");
-            print!("{}", tree.to_string().green());
+            print!("{}", tree.to_string());
         }
         Some(matched_value) => {
             //old instance
@@ -43,7 +45,7 @@ pub fn status() -> Result<(), Error> {
                 None => println!("No changes to commit"),
                 Some(t) => {
                     println!("Changes:");
-                    print!("{}", t.to_string().yellow());
+                    print!("{}", t.to_string());
                 }
             }
         }
@@ -54,7 +56,7 @@ pub fn status() -> Result<(), Error> {
 }
 
 pub fn get_tree_structure(root: PathBuf) -> Result<VCSTree, Error> {
-    let ignore: [&str; 4] = [".rust-vcs", "target", "Cargo.lock", ".git"];
+    let ignore: [&str; 3] = [".rust-vcs", "target", ".git"];
     let dir_contents = fs::read_dir(&root)?
         .filter(|res| {
             res.as_ref()
@@ -72,7 +74,7 @@ pub fn get_tree_structure(root: PathBuf) -> Result<VCSTree, Error> {
                         .into_string()
                         .map_err(|_| Error::new(ErrorKind::InvalidData, "invalid"))?,
                     sha: calculate_hash(entry.path())?,
-                }))
+                }, VCSKind::New))
             }
         })
         .collect::<Result<Vec<VCSTree>, Error>>()?;
@@ -102,31 +104,61 @@ pub struct VCSFile {
     sha: Box<[u8]>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+impl Eq for VCSFile {}
+
+impl PartialEq for VCSFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Hash for VCSFile {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state); // Only hash the name
+    }
+}
+
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub enum VCSKind {
+    New,
+    Deleted,
+    Modified,
+}
+
+#[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq)]
 pub struct VCSDirectory {
     name: String,
     children: Vec<VCSTree>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq)]
 pub enum VCSTree {
     Root(VCSDirectory),
-    File(VCSFile),
+    File(VCSFile, VCSKind),
     Directory(VCSDirectory),
 }
 
 impl VCSTree {
-    fn to_string(&self) -> String {
+    fn to_string(&self) -> ColoredString {
         self.paths_with_prefix(None)
             .into_iter()
-            .reduce(|acc, f| format!("{}\n{}", acc, f))
-            .unwrap_or("None".to_string())
+            .reduce(|acc, f| format!("{}\n{}", acc, f).into())
+            .unwrap_or("None".to_string().into())
     }
 
-    fn paths_with_prefix(&self, path: Option<String>) -> Vec<String> {
+    fn paths_with_prefix(&self, path: Option<String>) -> Vec<ColoredString> {
         let root = path.unwrap_or("".to_string());
         match self {
-            Self::File(f) => Vec::from([format!("{}{}", root, f.name)]),
+            Self::File(f, k) => {
+                let content = format!("{}{}", root, f.name);
+                let content_colored = match k {
+                    VCSKind::New => content.green(),
+                    VCSKind::Modified => content.yellow(),
+                    VCSKind::Deleted => content.red(),
+                };
+                Vec::from([content_colored.into()])
+            }
             Self::Directory(d) | Self::Root(d) => d
                 .children
                 .iter()
@@ -139,7 +171,7 @@ impl VCSTree {
         }
     }
 
-    fn form_tree(&self, mut path: PathBuf, contents: Vec<VCSTree>) -> Self {
+    fn form_tree(&self, path: PathBuf, contents: Vec<VCSTree>) -> Self {
         VCSTree::Root(VCSDirectory {
             name: path.into_os_string().to_str().unwrap().to_string(),
             children: contents,
@@ -148,7 +180,7 @@ impl VCSTree {
 
     fn copy_contents(&self, mut from: PathBuf, mut to: PathBuf) -> Result<(), Error> {
         match self {
-            Self::File(f) => {
+            Self::File(f, _) => {
                 fs::copy(
                     format!(
                         "{}/{}",
@@ -196,68 +228,96 @@ impl VCSTree {
         Ok(new_tree)
     }
 
-    // fn get_to_contents(&self, path: PathBuf) -> Result<Vec<Self>, Error> {
-
-    //     let root_directory: VCSDirectory = match self {
-    //         Self::File(f) => {
-    //             panic!("Unable to parse root directory")
-    //         }
-    //         Self::Directory(d) => d.clone(),
-    //     };
-
-    //     let mut tree = self.clone();
-
-    //     for p in path.iter() {
-    //         match tree {
-    //             Self::File(f) => {
-    //                 panic!("Unable to parse directory")
-    //             }
-    //             Self::Directory(d) => {
-    //                 tree = d.children.into_iter().filter(|child| match child.name == p).last().expect("Unable to parse directory")
-    //             },
-    //         }
-    //     }
-
-    //     let root_directory: VCSDirectory = match self {
-    //         Self::File(f) => {
-    //             panic!("Unable to parse directory")
-    //         }
-    //         Self::Directory(d) => d.clone(),
-    //     };
-
-    // }
-
     fn get_root_dir(&self) -> VCSDirectory {
         match self {
-            Self::File(_) | Self::Directory(_) => {
+            Self::File(_, _) | Self::Directory(_) => {
                 panic!("Unable to parse root directory")
             }
             Self::Root(d) => d.clone(),
         }
     }
 
+    fn set_file_kind(&self, kind: VCSKind) -> Self {
+        match self {
+            Self::File(x, _) => Self::File(x.clone(), kind),
+            Self::Directory(x) => Self::Directory(VCSDirectory {
+                children: x
+                    .children
+                    .clone()
+                    .into_iter()
+                    .map(|x| x.set_file_kind(kind.clone()))
+                    .collect(),
+                ..x.clone()
+            }),
+            Self::Root(x) => Self::Root(VCSDirectory {
+                children: x
+                    .children
+                    .clone()
+                    .into_iter()
+                    .map(|x| x.set_file_kind(kind.clone()))
+                    .collect(),
+                ..x.clone()
+            }),
+        }
+    }
+
     fn diff_tree(&self, old_tree: Self) -> Option<Self> {
         match (self, old_tree) {
-            (Self::File(a), Self::File(b)) => {
+            (Self::File(a, _), Self::File(b, _)) => {
                 if a.sha == b.sha {
                     None
                 } else {
-                    Some(self.clone())
+                    Some(Self::File(a.clone(), VCSKind::Modified))
                 }
             }
             (Self::Directory(a), Self::Directory(b)) | (Self::Root(a), Self::Root(b)) => {
-                let vec = a
-                    .children
+                let aset: HashSet<VCSTree> = a.children.iter().cloned().collect();
+                let bset: HashSet<VCSTree> = b.children.iter().cloned().collect();
+
+                let intersection_elements: Vec<VCSTree> =
+                    aset.intersection(&bset).cloned().collect();
+                let new_elements: Vec<VCSTree> = aset
+                    .difference(&intersection_elements.iter().cloned().collect())
+                    .cloned()
+                    .collect();
+                let deleted_elements: Vec<VCSTree> = bset
+                    .difference(&intersection_elements.iter().cloned().collect())
+                    .cloned()
+                    .collect();
+
+                let mut modified_vec = a
+                    .children.clone()
                     .iter()
-                    .zip(b.children.iter())
+                    .filter(|x| intersection_elements.contains(x))
+                    .zip(
+                        b.children
+                            .iter()
+                            .filter(|x| intersection_elements.contains(x)),
+                    )
                     .map(|(c, o)| c.clone().diff_tree(o.clone()))
                     .filter(|x| x.is_some())
                     .map(|x| x.unwrap())
                     .collect::<Vec<VCSTree>>();
 
-                if vec.len() > 0 {
+                let new_vec: Vec<VCSTree> = a
+                    .children
+                    .iter()
+                    .filter(|x| new_elements.contains(x))
+                    .map(|x| x.set_file_kind(VCSKind::New))
+                    .collect();
+
+                let deleted_vec: Vec<VCSTree> = b.children
+                    .iter()
+                    .filter(|x| deleted_elements.contains(x))
+                    .map(|x| x.set_file_kind(VCSKind::Deleted))
+                    .collect();
+
+                modified_vec.extend(new_vec);
+                modified_vec.extend(deleted_vec);
+
+                if modified_vec.len() > 0 {
                     let diff_dir = VCSDirectory {
-                        children: vec,
+                        children: modified_vec,
                         ..a.clone()
                     };
                     match self {
