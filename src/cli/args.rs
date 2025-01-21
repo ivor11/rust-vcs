@@ -11,6 +11,7 @@ pub struct Args {
 pub enum Command {
     Init,
     Status,
+    Log,
     Add {
         /// Paths to add to staging
         path: Vec<String>,

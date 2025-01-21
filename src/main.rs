@@ -1,6 +1,6 @@
 use clap::Parser;
-use rvcs::cli::args::{Args, Command};
-use rvcs::vcs::{init, commit, status};
+use rust_vcs::cli::args::{Args, Command};
+use rust_vcs::vcs::{init, commit, status, log};
 
 fn main() {
     let args = Args::parse();
@@ -21,6 +21,7 @@ fn main() {
             }
         }
         Command::Checkout { .. } => todo!(),
+        Command::Log { .. } => log::log().unwrap_or_else(|err| eprintln!("Error displaying log: {}", err)),
         Command::Status => status::status().unwrap_or_else(|err| eprintln!("Error fetching status: {}", err)),
     }
 }
