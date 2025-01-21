@@ -1,10 +1,10 @@
-use crate::status::{self, VCSTree};
+use super::error::VcsResult;
+use super::status;
 use std::fs;
-use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-pub fn commit() -> Result<(), Error> {
+pub fn commit() -> VcsResult<()> {
     let tree = status::get_tree_structure(".".into())?;
     let commit_id = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
