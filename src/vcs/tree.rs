@@ -102,21 +102,23 @@ impl VCSTree {
     fn copy_contents(&self, mut from: PathBuf, mut to: PathBuf) -> VCSResult<()> {
         match self {
             Self::File(f, _) => {
+                let from_path = format!(
+                    "{}/{}",
+                    from.into_os_string()
+                        .into_string()
+                        .expect("Unable to unpack from"),
+                    f.name
+                );
+                let to_path = format!(
+                    "{}/{}",
+                    to.into_os_string()
+                        .into_string()
+                        .expect("Unable to unpack to"),
+                    f.name
+                );
                 fs::copy(
-                    format!(
-                        "{}/{}",
-                        from.into_os_string()
-                            .into_string()
-                            .expect("Unable to unpack from"),
-                        f.name
-                    ),
-                    format!(
-                        "{}/{}",
-                        to.into_os_string()
-                            .into_string()
-                            .expect("Unable to unpack to"),
-                        f.name
-                    ),
+                    from_path,
+                    to_path,
                 )?;
                 Ok(())
             }
@@ -142,7 +144,9 @@ impl VCSTree {
     pub fn copy_to(&self, new_path: PathBuf) -> VCSResult<Self> {
         let root_directory: VCSDirectory = self.get_root_dir();
 
-        self.copy_contents(PathBuf::from(&root_directory.name), new_path.clone())?;
+        for child in root_directory.children.clone() {
+            child.copy_contents(PathBuf::from(&root_directory.name), new_path.clone())?;
+        }
 
         let new_tree = self.form_tree(new_path, root_directory.children);
 
