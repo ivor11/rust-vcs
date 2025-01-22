@@ -1,4 +1,4 @@
-use super::error::VcsResult;
+use super::error::{VCSError, VCSResult};
 use super::tree::{VCSDirectory, VCSFile, VCSKind, VCSTree};
 use clap::error::Result;
 use sha2::{Digest, Sha256};
@@ -7,7 +7,34 @@ use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 
-pub fn status() -> VcsResult<()> {
+pub fn status() -> VCSResult<()> {
+    fs::exists(".rust-vcs/index").map(|x| {
+        if !x {
+            Err(VCSError::Uninitialized)
+        } else {
+            Ok(())
+        }
+    })??;
+
+    let current_commit = fs::read_to_string(".rust-vcs/current")?;
+    let diff = get_current_diff_tree()?;
+    
+    if current_commit.is_empty() {
+        //new instance
+        println!("New VCS Repository: Untracked files");
+    };
+    match diff {
+        None => println!("No changes to commit"),
+        Some(t) => {
+            println!("Changes:");
+            print!("{}", t.to_string());
+        }
+    }
+
+    Ok(())
+}
+
+pub fn get_current_diff_tree() -> VCSResult<Option<VCSTree>> {
     let current_commit = fs::read_to_string(".rust-vcs/current")?;
 
     let matched_commit = fs::read_dir(".rust-vcs/commits")?
@@ -17,15 +44,12 @@ pub fn status() -> VcsResult<()> {
         })
         .last();
 
-    let tree = get_tree_structure(".".into())?;
-    match matched_commit {
-        None => {
-            //new instance
-            println!("New VCS Repository: Untracked files");
-            print!("{}", tree.to_string());
-        }
+    let tree: VCSTree = get_tree_structure(".".into())?;
+    
+    Ok(
+        match matched_commit {
+        None => Some(tree),
         Some(matched_value) => {
-            //old instance
             let matched_commit = matched_value?;
             let commit_id = matched_commit.file_name();
             let mut path = PathBuf::from("./.rust-vcs/commits");
@@ -37,19 +61,9 @@ pub fn status() -> VcsResult<()> {
 
             let old_tree: VCSTree = serde_json::from_str(&fs::read_to_string(old_tree_path)?)?;
 
-            let diff = tree.diff_tree(old_tree);
-
-            match diff {
-                None => println!("No changes to commit"),
-                Some(t) => {
-                    println!("Changes:");
-                    print!("{}", t.to_string());
-                }
-            }
+            tree.diff_tree(old_tree)
         }
-    };
-
-    Ok(())
+    })
 }
 
 pub fn get_tree_structure(root: PathBuf) -> Result<VCSTree, Error> {

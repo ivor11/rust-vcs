@@ -1,12 +1,12 @@
-use super::error::VcsResult;
+use super::error::{VCSError, VCSResult};
 use super::status;
 use super::util;
+use std::fmt;
 use std::fs::{self, File};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::SystemTime;
-use std::io::Write;
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::fmt;
 
 fn calculate_hash<T: Hash>(t: &T) -> String {
     let mut s = DefaultHasher::new();
@@ -27,22 +27,36 @@ impl Commit {
         Self {
             id: calculate_hash(&commit_time),
             message,
-            time: commit_time
+            time: commit_time,
         }
     }
 }
 
 impl fmt::Display for Commit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}\t{}\t{}", self.id, util::systemtime_strftime(self.time, "%Y/%m/%d %T"), self.message)
+        write!(
+            f,
+            "{}\t{}\t{}",
+            self.id,
+            util::systemtime_strftime(self.time, "%Y/%m/%d %T"),
+            self.message
+        )
     }
 }
 
-pub fn commit(message: String) -> VcsResult<()> {
+pub fn commit(message: String) -> VCSResult<()> {
+    fs::exists(".rust-vcs/index").map(|x| {
+        if !x {
+            Err(VCSError::Uninitialized)
+        } else {
+            Ok(())
+        }
+    })??;
+
+    status::get_current_diff_tree()?.ok_or(VCSError::Other("No changes to commit".into()))?;
+
+    // println!("{:?}", x);
     let tree = status::get_tree_structure(".".into())?;
-        // .duration_since(SystemTime::UNIX_EPOCH)
-        // .expect("Failed to get system time")
-        // .as_secs();
 
     let commit = Commit::new(message);
 
@@ -56,7 +70,7 @@ pub fn commit(message: String) -> VcsResult<()> {
     fs::write(format!("{}/meta/tree.json", commit_root), json_data)?;
 
     fs::write(".rust-vcs/current", commit.id.to_string())?;
-    
+
     let mut logfile = File::options().append(true).open(".rust-vcs/index")?;
     writeln!(&mut logfile, "{}", commit)?;
 

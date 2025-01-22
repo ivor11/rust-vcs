@@ -1,4 +1,4 @@
-use super::error::VcsResult;
+use super::error::VCSResult;
 use colored::{ColoredString, Colorize};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -85,7 +85,7 @@ impl VCSTree {
         })
     }
 
-    fn copy_contents(&self, mut from: PathBuf, mut to: PathBuf) -> VcsResult<()> {
+    fn copy_contents(&self, mut from: PathBuf, mut to: PathBuf) -> VCSResult<()> {
         match self {
             Self::File(f, _) => {
                 fs::copy(
@@ -125,7 +125,7 @@ impl VCSTree {
         }
     }
 
-    pub fn copy_to(&self, new_path: PathBuf) -> VcsResult<Self> {
+    pub fn copy_to(&self, new_path: PathBuf) -> VCSResult<Self> {
         let root_directory: VCSDirectory = self.get_root_dir();
 
         self.copy_contents(PathBuf::from(&root_directory.name), new_path.clone())?;
