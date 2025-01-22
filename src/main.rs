@@ -11,7 +11,7 @@ fn main() {
         },
         Command::Commit { message } => {
             print!("Commit with message {}", message);
-            if let Err(err) = commit::commit() {
+            if let Err(err) = commit::commit(message) {
                 eprintln!("Failed to commit: {}", err);
             }
         }

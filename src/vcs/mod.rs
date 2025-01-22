@@ -1,5 +1,6 @@
 mod error;
 mod tree;
+mod util;
 
 pub mod commit;
 pub mod init;
