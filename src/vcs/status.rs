@@ -18,7 +18,7 @@ pub fn status() -> VCSResult<()> {
 
     let current_commit = fs::read_to_string(".rust-vcs/current")?;
     let diff = get_current_diff_tree()?;
-    
+
     if current_commit.is_empty() {
         //new instance
         println!("New VCS Repository: Untracked files");
@@ -45,9 +45,8 @@ pub fn get_current_diff_tree() -> VCSResult<Option<VCSTree>> {
         .last();
 
     let tree: VCSTree = get_tree_structure(".".into())?;
-    
-    Ok(
-        match matched_commit {
+
+    Ok(match matched_commit {
         None => Some(tree),
         Some(matched_value) => {
             let matched_commit = matched_value?;

@@ -33,10 +33,24 @@ pub enum VCSKind {
     Modified,
 }
 
-#[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct VCSDirectory {
     pub name: String,
     pub children: Vec<VCSTree>,
+}
+
+impl Eq for VCSDirectory {}
+
+impl PartialEq for VCSDirectory {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Hash for VCSDirectory {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Hash, PartialEq, Eq)]

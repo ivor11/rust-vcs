@@ -1,6 +1,6 @@
 use clap::Parser;
 use rust_vcs::cli::args::{Args, Command};
-use rust_vcs::vcs::{commit, init, log, status};
+use rust_vcs::vcs::{checkout, commit, init, log, status};
 
 fn main() {
     let args = Args::parse();
@@ -20,7 +20,13 @@ fn main() {
                 println!("{}", p);
             }
         }
-        Command::Checkout { .. } => todo!(),
+        Command::Checkout { commit } => {
+            if let Err(err) = checkout::checkout(commit.clone()) {
+                eprintln!("Failed to checkout: {}", err);
+            } else {
+                println!("Checkout to commit {}", commit);
+            }
+        }
         Command::Log { .. } => {
             log::log().unwrap_or_else(|err| eprintln!("Error displaying log: {}", err))
         }
