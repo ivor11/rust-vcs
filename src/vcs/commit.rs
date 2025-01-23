@@ -1,3 +1,5 @@
+use crate::config::Settings;
+
 use super::error::{VCSError, VCSResult};
 use super::status;
 use super::util;
@@ -44,7 +46,7 @@ impl fmt::Display for Commit {
     }
 }
 
-pub fn commit(message: String) -> VCSResult<()> {
+pub fn commit(message: String, config: Settings) -> VCSResult<()> {
     fs::exists(".rust-vcs/index").map(|x| {
         if !x {
             Err(VCSError::Uninitialized)
@@ -53,10 +55,10 @@ pub fn commit(message: String) -> VCSResult<()> {
         }
     })??;
 
-    status::get_current_diff_tree()?.ok_or(VCSError::Other("No changes to commit".into()))?;
+    status::get_current_diff_tree(&config)?
+        .ok_or(VCSError::Other("No changes to commit".into()))?;
 
-    // println!("{:?}", x);
-    let tree = status::get_tree_structure(".".into())?;
+    let tree = status::get_tree_structure(".".into(), &config)?;
 
     let commit = Commit::new(message);
 

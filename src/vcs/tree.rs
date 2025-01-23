@@ -116,10 +116,7 @@ impl VCSTree {
                         .expect("Unable to unpack to"),
                     f.name
                 );
-                fs::copy(
-                    from_path,
-                    to_path,
-                )?;
+                fs::copy(from_path, to_path)?;
                 Ok(())
             }
             Self::Directory(d) | Self::Root(d) => {

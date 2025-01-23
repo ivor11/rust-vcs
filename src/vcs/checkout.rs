@@ -1,8 +1,13 @@
-use super::{error::{VCSError, VCSResult}, tree::VCSTree};
-use std::{fs, path::PathBuf};
-use super::status;
+use crate::config::Settings;
 
-pub fn checkout(commit: String) -> VCSResult<()> {
+use super::status;
+use super::{
+    error::{VCSError, VCSResult},
+    tree::VCSTree,
+};
+use std::{fs, path::PathBuf};
+
+pub fn checkout(commit: String, config: Settings) -> VCSResult<()> {
     fs::exists(".rust-vcs/index").map(|x| {
         if !x {
             Err(VCSError::Uninitialized)
@@ -11,7 +16,7 @@ pub fn checkout(commit: String) -> VCSResult<()> {
         }
     })??;
 
-    if let Some(_) = status::get_current_diff_tree()? {
+    if let Some(_) = status::get_current_diff_tree(&config)? {
         return Err(VCSError::Other("Uncommitted changes".into()));
     }
 

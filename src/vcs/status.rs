@@ -1,3 +1,5 @@
+use crate::config::Settings;
+
 use super::error::{VCSError, VCSResult};
 use super::tree::{VCSDirectory, VCSFile, VCSKind, VCSTree};
 use clap::error::Result;
@@ -7,7 +9,7 @@ use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 
-pub fn status() -> VCSResult<()> {
+pub fn status(config: Settings) -> VCSResult<()> {
     fs::exists(".rust-vcs/index").map(|x| {
         if !x {
             Err(VCSError::Uninitialized)
@@ -17,7 +19,7 @@ pub fn status() -> VCSResult<()> {
     })??;
 
     let current_commit = fs::read_to_string(".rust-vcs/current")?;
-    let diff = get_current_diff_tree()?;
+    let diff = get_current_diff_tree(&config)?;
 
     if current_commit.is_empty() {
         //new instance
@@ -34,7 +36,7 @@ pub fn status() -> VCSResult<()> {
     Ok(())
 }
 
-pub fn get_current_diff_tree() -> VCSResult<Option<VCSTree>> {
+pub fn get_current_diff_tree(config: &Settings) -> VCSResult<Option<VCSTree>> {
     let current_commit = fs::read_to_string(".rust-vcs/current")?;
 
     let matched_commit = fs::read_dir(".rust-vcs/commits")?
@@ -44,7 +46,7 @@ pub fn get_current_diff_tree() -> VCSResult<Option<VCSTree>> {
         })
         .last();
 
-    let tree: VCSTree = get_tree_structure(".".into())?;
+    let tree: VCSTree = get_tree_structure(".".into(), config)?;
 
     Ok(match matched_commit {
         None => Some(tree),
@@ -65,18 +67,26 @@ pub fn get_current_diff_tree() -> VCSResult<Option<VCSTree>> {
     })
 }
 
-pub fn get_tree_structure(root: PathBuf) -> Result<VCSTree, Error> {
-    let ignore: [&str; 3] = [".rust-vcs", "target", ".git"];
+pub fn get_tree_structure(root: PathBuf, config: &Settings) -> VCSResult<VCSTree> {
+    let ignore = &config.ignore;
     let dir_contents = fs::read_dir(&root)?
         .filter(|res| {
             res.as_ref()
-                .map(|entry| !ignore.contains(&entry.file_name().to_str().unwrap_or("")))
+                .map(|entry| {
+                    !ignore.contains(
+                        &entry
+                            .file_name()
+                            .to_os_string()
+                            .into_string()
+                            .unwrap_or("".into()),
+                    )
+                })
                 .expect("FAILED TO FILTER")
         })
         .map(|res| {
             let entry = res?;
             if entry.file_type()?.is_dir() {
-                get_tree_structure(entry.path())
+                get_tree_structure(entry.path(), config)
             } else {
                 Ok(VCSTree::File(
                     VCSFile {
@@ -84,13 +94,17 @@ pub fn get_tree_structure(root: PathBuf) -> Result<VCSTree, Error> {
                             .file_name()
                             .into_string()
                             .map_err(|_| Error::new(ErrorKind::InvalidData, "invalid"))?,
-                        sha: calculate_hash(entry.path())?,
+                        sha: calculate_hash(entry.path()).map_err(|_| {
+                            VCSError::IOError(
+                                format!("Unable to calculate hash for {:?}", entry.path()).into(),
+                            )
+                        })?,
                     },
                     VCSKind::New,
                 ))
             }
         })
-        .collect::<Result<Vec<VCSTree>, Error>>()?;
+        .collect::<VCSResult<Vec<VCSTree>>>()?;
 
     Ok(VCSTree::Root(VCSDirectory {
         name: root

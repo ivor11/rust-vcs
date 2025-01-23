@@ -21,7 +21,7 @@ impl fmt::Display for VCSError {
     }
 }
 
-// impl std::error::Error for VCSError {}
+impl std::error::Error for VCSError {}
 
 impl From<io::Error> for VCSError {
     fn from(error: io::Error) -> Self {
