@@ -5,16 +5,10 @@ use super::status;
 use super::util;
 use std::fmt;
 use std::fs::{self, File};
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::Hash;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::SystemTime;
-
-fn calculate_hash<T: Hash>(t: &T) -> String {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    format!("{:x}", s.finish())
-}
 
 #[derive(Hash)]
 struct Commit {
@@ -27,7 +21,7 @@ impl Commit {
     fn new(message: String) -> Self {
         let commit_time = SystemTime::now();
         Self {
-            id: calculate_hash(&commit_time),
+            id: util::calculate_hash(&commit_time),
             message,
             time: commit_time,
         }
@@ -47,13 +41,7 @@ impl fmt::Display for Commit {
 }
 
 pub fn commit(message: String, config: Settings) -> VCSResult<()> {
-    fs::exists(".rust-vcs/index").map(|x| {
-        if !x {
-            Err(VCSError::Uninitialized)
-        } else {
-            Ok(())
-        }
-    })??;
+    util::check_vcs_initialized()?;
 
     status::get_current_diff_tree(&config)?
         .ok_or(VCSError::Other("No changes to commit".into()))?;

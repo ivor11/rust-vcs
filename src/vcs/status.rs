@@ -2,6 +2,7 @@ use crate::config::Settings;
 
 use super::error::{VCSError, VCSResult};
 use super::tree::{VCSDirectory, VCSFile, VCSKind, VCSTree};
+use super::util;
 use clap::error::Result;
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
@@ -10,13 +11,7 @@ use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 
 pub fn status(config: Settings) -> VCSResult<()> {
-    fs::exists(".rust-vcs/index").map(|x| {
-        if !x {
-            Err(VCSError::Uninitialized)
-        } else {
-            Ok(())
-        }
-    })??;
+    util::check_vcs_initialized()?;
 
     let current_commit = fs::read_to_string(".rust-vcs/current")?;
     let diff = get_current_diff_tree(&config)?;

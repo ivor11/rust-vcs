@@ -1,6 +1,6 @@
 use crate::config::Settings;
 
-use super::status;
+use super::{status, util};
 use super::{
     error::{VCSError, VCSResult},
     tree::VCSTree,
@@ -8,13 +8,7 @@ use super::{
 use std::{fs, path::PathBuf};
 
 pub fn checkout(commit: String, config: Settings) -> VCSResult<()> {
-    fs::exists(".rust-vcs/index").map(|x| {
-        if !x {
-            Err(VCSError::Uninitialized)
-        } else {
-            Ok(())
-        }
-    })??;
+    util::check_vcs_initialized()?;
 
     if let Some(_) = status::get_current_diff_tree(&config)? {
         return Err(VCSError::Other("Uncommitted changes".into()));
